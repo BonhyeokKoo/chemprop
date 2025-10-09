@@ -346,8 +346,33 @@ class SpectralFFN(_FFNPredictorBase):
     _T_default_criterion = SID
     _T_default_metric = SID
 
-    def __init__(self, *args, spectral_activation: str | None = "softplus", **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(
+        self,
+        spectral_activation: str | None = "softplus",
+        n_tasks: int = 1,
+        input_dim: int = DEFAULT_HIDDEN_DIM,
+        hidden_dim: int = 300,
+        n_layers: int = 1,
+        dropout: float = 0.0,
+        activation: str | nn.Module = "relu",
+        criterion: ChempropMetric | None = None,
+        task_weights: Tensor | None = None,
+        threshold: float | None = None,
+        output_transform: UnscaleTransform | None = None,
+    ):
+        task_weights = torch.ones(n_tasks) if task_weights is None else task_weights
+        super().__init__(
+            n_tasks,
+            input_dim,
+            hidden_dim,
+            n_layers,
+            dropout,
+            activation,
+            criterion,
+            task_weights,
+            threshold,
+            output_transform,
+        )
 
         match spectral_activation:
             case "exp":
@@ -359,7 +384,6 @@ class SpectralFFN(_FFNPredictorBase):
                     f"Unknown spectral activation: {spectral_activation}. "
                     "Expected one of 'exp', 'softplus' or None."
                 )
-
         self.ffn.add_module("spectral_activation", spectral_activation)
 
     def forward(self, Z: Tensor) -> Tensor:
