@@ -534,6 +534,28 @@ class SID(ChempropMetric):
     def extra_repr(self) -> str:
         return f"threshold={self.threshold}"
 
+@LossFunctionRegistry.register("jsd")
+class JSD(ChempropMetric):
+    def __init__(self, task_weights: ArrayLike = 1.0, threshold: float | None = None, **kwargs):
+        super().__init__(task_weights, **kwargs)
+
+        self.threshold = threshold
+
+    def _calc_unreduced_loss(self, preds: Tensor, targets: Tensor, mask: Tensor, *args) -> Tensor:
+        if self.threshold is not None:
+            preds = preds.clamp(min=self.threshold)
+
+        preds_norm = preds / (preds * mask).sum(1, keepdim=True)
+
+        targets = targets.masked_fill(~mask, 1)
+        preds_norm = preds_norm.masked_fill(~mask, 1)
+
+        med = (preds_norm + targets) * 0.5
+
+        return 0.5 * ((preds_norm / med).log() * preds_norm) + 0.5 * (targets / med).log() * targets
+
+    def extra_repr(self) -> str:
+        return f"threshold={self.threshold}"
 
 @LossFunctionRegistry.register(["earthmovers", "wasserstein"])
 class Wasserstein(ChempropMetric):

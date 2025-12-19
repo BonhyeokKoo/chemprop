@@ -11,6 +11,7 @@ from chemprop.nn.hparams import HasHParams
 from chemprop.nn.metrics import (
     MSE,
     SID,
+    JSD,
     BCELoss,
     BinaryAUROC,
     ChempropMetric,
@@ -343,12 +344,12 @@ class _Exp(nn.Module):
 @PredictorRegistry.register("spectral")
 class SpectralFFN(_FFNPredictorBase):
     n_targets = 1
-    _T_default_criterion = SID
-    _T_default_metric = SID
+    _T_default_criterion = JSD
+    _T_default_metric = JSD
 
     def __init__(
         self,
-        spectral_activation: str | None = "softplus",
+        spectral_activation: str | None = "exp",
         n_tasks: int = 1,
         input_dim: int = DEFAULT_HIDDEN_DIM,
         hidden_dim: int = 300,

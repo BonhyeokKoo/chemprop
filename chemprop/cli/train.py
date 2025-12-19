@@ -294,13 +294,13 @@ def add_train_args(parser: ArgumentParser) -> ArgumentParser:
         default=3,
         help="Number of classes when running multiclass classification",
     )
-    # TODO: Add in v2.1
-    # extra_mpnn_args.add_argument(
-    #     "--spectral-activation",
-    #     default="exp",
-    #     choices=["softplus", "exp"],
-    #     help="Indicates which function to use in task_type spectra training to constrain outputs to be positive.",
-    # )
+
+    extra_mpnn_args.add_argument(
+        "--spectral-activation",
+        default="exp",
+        choices=["softplus", "exp"],
+        help="Indicates which function to use in task_type spectra training to constrain outputs to be positive.",
+    )
 
     atom_ffn_args = parser.add_argument_group("Atom FFN args")
     atom_ffn_args.add_argument(
@@ -416,7 +416,7 @@ def add_train_args(parser: ArgumentParser) -> ArgumentParser:
         "--splits-column",
         help="Name of the column in the input CSV file containing 'train', 'val', or 'test' for each row.",
     )
-    # TODO: Add in v2.1
+
     # train_data_args.add_argument(
     #     "--spectra-phase-mask-path",
     #     help="Path to a file containing a phase mask array, used for excluding particular regions in spectra predictions.",
@@ -450,7 +450,6 @@ def add_train_args(parser: ArgumentParser) -> ArgumentParser:
     train_args.add_argument(
         "--alpha", type=float, default=0.1, help="Target error bounds for quantile interval loss"
     )
-    # TODO: Add in v2.1
     # train_args.add_argument(  # TODO: Is threshold the same thing as the spectra target floor? I'm not sure but combined them.
     #     "-T",
     #     "--threshold",
@@ -1357,7 +1356,7 @@ def build_model(
         task_weights=args.task_weights,
         n_classes=args.multiclass_num_classes,
         output_transform=output_transform,
-        # spectral_activation=args.spectral_activation, TODO: Add in v2.1
+        spectral_activation=args.spectral_activation
     )
 
     if args.loss_function is None:
