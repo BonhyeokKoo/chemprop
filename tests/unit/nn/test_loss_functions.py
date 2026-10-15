@@ -5,6 +5,7 @@ import pytest
 import torch
 
 from chemprop.nn.metrics import (
+    JSD,
     SID,
     BCELoss,
     BinaryMCCLoss,
@@ -426,7 +427,7 @@ def test_MulticlassMCC(
             torch.ones([2], dtype=torch.bool),
             torch.ones([2], dtype=torch.bool),
             None,
-            torch.tensor(0.295655, dtype=torch.float),
+            torch.tensor(0.014728, dtype=torch.float),
         ),
         (
             torch.tensor([[0.6, 0.4], [0.2, 0.8]]),
@@ -437,7 +438,7 @@ def test_MulticlassMCC(
             torch.ones([2], dtype=torch.bool),
             torch.ones([2], dtype=torch.bool),
             0.5,
-            torch.tensor(0.033673, dtype=torch.float),
+            torch.tensor(0.002530, dtype=torch.float),
         ),
     ],
 )
@@ -450,6 +451,67 @@ def test_SID(
     """
     sid_loss = SID(task_weights=task_weights, threshold=threshold)
     loss = sid_loss(preds, targets, mask, weights, lt_mask, gt_mask)
+    torch.testing.assert_close(loss, expected_loss)
+
+
+@pytest.mark.parametrize(
+    "preds,targets,mask,weights,task_weights,lt_mask,gt_mask,threshold,expected_loss",
+    [
+        (
+            torch.tensor([[0.8, 0.2], [0.3, 0.7]]),
+            torch.tensor([[0.9, 0.1], [0.4, 0.6]]),
+            torch.ones([2, 2], dtype=torch.bool),
+            torch.ones([1]),
+            torch.ones([2]),
+            torch.ones([2], dtype=torch.bool),
+            torch.ones([2], dtype=torch.bool),
+            None,
+            torch.tensor(0.003869, dtype=torch.float),
+        ),
+        (
+            torch.tensor([[0.6, 0.4], [0.2, 0.8]]),
+            torch.tensor([[0.7, 0.3], [0.3, 0.7]]),
+            torch.tensor([[1, 1], [1, 0]], dtype=torch.bool),
+            torch.ones([1]),
+            torch.ones([2]),
+            torch.ones([2], dtype=torch.bool),
+            torch.ones([2], dtype=torch.bool),
+            None,
+            torch.tensor(0.001836, dtype=torch.float),
+        ),
+        (
+            torch.tensor([[0.6, 0.4], [0.2, 0.8]]),
+            torch.tensor([[0.7, 0.3], [0.3, 0.7]]),
+            torch.tensor([[1, 1], [1, 1]], dtype=torch.bool),
+            torch.ones([1]),
+            torch.ones([2]),
+            torch.ones([2], dtype=torch.bool),
+            torch.ones([2], dtype=torch.bool),
+            0.5,
+            torch.tensor(0.000316, dtype=torch.float),
+        ),
+        (
+            torch.tensor([[0.5, 0.3, 0.2], [0.1, 0.1, 0.8]]),
+            torch.tensor([[0.6, 0.4, 0.0], [0.0, 0.2, 0.8]]),
+            torch.ones([2, 3], dtype=torch.bool),
+            torch.ones([1]),
+            torch.ones([3]),
+            torch.ones([3], dtype=torch.bool),
+            torch.ones([3], dtype=torch.bool),
+            1e-8,
+            torch.tensor(0.019721, dtype=torch.float),
+        ),
+    ],
+)
+def test_JSD(
+    preds, targets, mask, weights, task_weights, lt_mask, gt_mask, threshold, expected_loss
+):
+    """
+    Test on the JSD loss function. Expected values are scipy's jensenshannon(p, t) ** 2 summed
+    over spectra and divided by the number of unmasked bins. The last case has zero target bins.
+    """
+    jsd_loss = JSD(task_weights=task_weights, threshold=threshold)
+    loss = jsd_loss(preds, targets, mask, weights, lt_mask, gt_mask)
     torch.testing.assert_close(loss, expected_loss)
 
 

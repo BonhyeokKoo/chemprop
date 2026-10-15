@@ -546,7 +546,7 @@ class DirichletLoss(ChempropMetric):
 
 @LossFunctionRegistry.register("sid")
 class SID(ChempropMetric):
-    def __init__(self, task_weights: ArrayLike = 1.0, threshold: float | None = None, **kwargs):
+    def __init__(self, task_weights: ArrayLike = 1.0, threshold: float | None = 1e-8, **kwargs):
         super().__init__(task_weights, **kwargs)
 
         self.threshold = threshold
@@ -554,8 +554,10 @@ class SID(ChempropMetric):
     def _calc_unreduced_loss(self, preds: Tensor, targets: Tensor, mask: Tensor, *args) -> Tensor:
         if self.threshold is not None:
             preds = preds.clamp(min=self.threshold)
+            targets = targets.clamp(min=self.threshold)
 
         preds_norm = preds / (preds * mask).sum(1, keepdim=True)
+        targets = targets / (targets * mask).sum(1, keepdim=True)
 
         targets = targets.masked_fill(~mask, 1)
         preds_norm = preds_norm.masked_fill(~mask, 1)
@@ -565,9 +567,10 @@ class SID(ChempropMetric):
     def extra_repr(self) -> str:
         return f"threshold={self.threshold}"
 
+
 @LossFunctionRegistry.register("jsd")
 class JSD(ChempropMetric):
-    def __init__(self, task_weights: ArrayLike = 1.0, threshold: float | None = None, **kwargs):
+    def __init__(self, task_weights: ArrayLike = 1.0, threshold: float | None = 1e-8, **kwargs):
         super().__init__(task_weights, **kwargs)
 
         self.threshold = threshold
@@ -575,8 +578,10 @@ class JSD(ChempropMetric):
     def _calc_unreduced_loss(self, preds: Tensor, targets: Tensor, mask: Tensor, *args) -> Tensor:
         if self.threshold is not None:
             preds = preds.clamp(min=self.threshold)
+            targets = targets.clamp(min=self.threshold)
 
         preds_norm = preds / (preds * mask).sum(1, keepdim=True)
+        targets = targets / (targets * mask).sum(1, keepdim=True)
 
         targets = targets.masked_fill(~mask, 1)
         preds_norm = preds_norm.masked_fill(~mask, 1)
@@ -587,6 +592,7 @@ class JSD(ChempropMetric):
 
     def extra_repr(self) -> str:
         return f"threshold={self.threshold}"
+
 
 @LossFunctionRegistry.register(["earthmovers", "wasserstein"])
 class Wasserstein(ChempropMetric):

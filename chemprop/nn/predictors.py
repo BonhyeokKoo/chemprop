@@ -12,7 +12,6 @@ from chemprop.nn.hparams import HasHParams
 from chemprop.nn.metrics import (
     MSE,
     SID,
-    JSD,
     BCELoss,
     BinaryAUROC,
     ChempropMetric,
@@ -345,8 +344,8 @@ class _Exp(nn.Module):
 @PredictorRegistry.register("spectral")
 class SpectralFFN(_FFNPredictorBase):
     n_targets = 1
-    _T_default_criterion = JSD
-    _T_default_metric = JSD
+    _T_default_criterion = SID
+    _T_default_metric = SID
 
     def __init__(
         self,
@@ -359,7 +358,7 @@ class SpectralFFN(_FFNPredictorBase):
         activation: str | nn.Module = "relu",
         criterion: ChempropMetric | None = None,
         task_weights: Tensor | None = None,
-        threshold: float | None = None,
+        threshold: float | None = 1e-8,
         output_transform: UnscaleTransform | None = None,
     ):
         task_weights = torch.ones(n_tasks) if task_weights is None else task_weights
@@ -386,11 +385,11 @@ class SpectralFFN(_FFNPredictorBase):
                     f"Unknown spectral activation: {spectral_activation}. "
                     "Expected one of 'exp', 'softplus' or None."
                 )
-        self.ffn.add_module("spectral_activation", spectral_activation)
+        self.spectral_activation = spectral_activation
 
     def forward(self, Z: Tensor) -> Tensor:
         Y = super().forward(Z)
-        Y = self.ffn.spectral_activation(Y)
+        Y = self.spectral_activation(Y)
         return Y / Y.sum(1, keepdim=True)
 
     train_step = forward

@@ -1604,7 +1604,7 @@ def build_model(
         task_weights=args.task_weights,
         n_classes=args.multiclass_num_classes,
         output_transform=output_transform,
-        spectral_activation=args.spectral_activation
+        spectral_activation=args.spectral_activation,
     )
 
     if args.loss_function is None:
@@ -2035,6 +2035,11 @@ def evaluate_and_save_predictions(preds, test_loader, metrics, model_output_dir,
     individual_scores = dict()
     for metric in metrics:
         individual_scores[metric.alias] = []
+        if args.task_type == "spectral":
+            individual_scores[metric.alias].append(
+                metric(torch.from_numpy(preds), torch.from_numpy(targets), mask, weights)
+            )
+            continue
         for i, col in enumerate(args.target_columns):
             if "multiclass" in args.task_type:
                 preds_slice = torch.from_numpy(preds[:, i : i + 1, :])
@@ -2057,7 +2062,7 @@ def evaluate_and_save_predictions(preds, test_loader, metrics, model_output_dir,
         avg_loss = sum(individual_scores[metric.alias]) / len(individual_scores[metric.alias])
         logger.info(f"test/{metric.alias}: {avg_loss}")
 
-    if args.show_individual_scores:
+    if args.show_individual_scores and args.task_type != "spectral":
         logger.info("Entire Test Set individual results:")
         for metric in metrics:
             for i, col in enumerate(args.target_columns):

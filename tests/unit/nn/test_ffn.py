@@ -144,8 +144,17 @@ class TestPredictorPerLayer:
     def test_spectral_ffn_per_layer(self, hidden_dims):
         from chemprop.nn.predictors import SpectralFFN
 
-        pred = SpectralFFN(n_tasks=1, input_dim=200, hidden_dim=hidden_dims)
+        pred = SpectralFFN(n_tasks=5, input_dim=200, hidden_dim=hidden_dims)
         z = torch.randn(2, 200)
         out = pred(z)
-        assert out.shape == (2, 1)
+        assert out.shape == (2, 5)
         assert torch.allclose(out.sum(-1), torch.ones(2), atol=1e-5)
+
+        # with a constant final layer, a single exp + normalization is exactly softmax(bias)
+        last = [m for m in pred.ffn.modules() if isinstance(m, torch.nn.Linear)][-1]
+        b = torch.arange(5.0)
+        with torch.no_grad():
+            last.weight.zero_()
+            last.bias.copy_(b)
+        assert torch.allclose(pred(z), b.softmax(0).expand(2, 5))
+        assert pred.n_tasks == 5
