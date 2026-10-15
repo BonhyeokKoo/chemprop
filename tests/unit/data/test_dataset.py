@@ -12,7 +12,6 @@ from chemprop.featurizers.molgraph.molecule import (
     CuikmolmakerMolGraphFeaturizer,
     SimpleMoleculeMolGraphFeaturizer,
 )
-from chemprop.utils.utils import is_cuikmolmaker_available
 
 
 @pytest.fixture(params=[1, 5, 10])
@@ -50,12 +49,7 @@ def V_ds(mols):
     return [np.random.rand(mol.GetNumAtoms(), 3) for mol in mols]
 
 
-@pytest.mark.parametrize(
-    "X_d, V_fs, E_fs, V_ds",
-    [(None, None, None, None), ("X_d", "V_fs", "E_fs", "V_ds")],
-    indirect=True,
-)
-@pytest.fixture
+@pytest.fixture(params=[(None, None, None, None), ("X_d", "V_fs", "E_fs", "V_ds")])
 def data(mols, targets, X_d, V_fs, E_fs, V_ds):
     return [
         MoleculeDatapoint(mol=mol, y=target, x_d=x_d, V_f=V_f, E_f=E_f, V_d=V_d)
@@ -63,12 +57,7 @@ def data(mols, targets, X_d, V_fs, E_fs, V_ds):
     ]
 
 
-@pytest.mark.parametrize(
-    "X_d, V_fs, E_fs, V_ds",
-    [(None, None, None, None), ("X_d", "V_fs", "E_fs", "V_ds")],
-    indirect=True,
-)
-@pytest.fixture
+@pytest.fixture(params=[(None, None, None, None), ("X_d", "V_fs", "E_fs", "V_ds")])
 def lazy_data(smis, targets, X_d, V_fs, E_fs, V_ds):
     return [
         LazyMoleculeDatapoint(smi, y=target, x_d=x_d, V_f=V_f, E_f=E_f, V_d=V_d)
@@ -99,12 +88,9 @@ def dataset(data, cache):
 
 @pytest.fixture
 def cuik_molecule_dataset(lazy_data):
-    if is_cuikmolmaker_available():
-        featurizer = CuikmolmakerMolGraphFeaturizer(atom_featurizer_mode="V2")
-        dset = CuikmolmakerDataset(lazy_data, featurizer)
-        return dset
-    else:
-        return None
+    featurizer = CuikmolmakerMolGraphFeaturizer(atom_featurizer_mode="V2")
+    dset = CuikmolmakerDataset(lazy_data, featurizer)
+    return dset
 
 
 def test_none():
@@ -118,20 +104,17 @@ def test_empty():
 
 def test_len(data, dataset, cuik_molecule_dataset):
     assert len(data) == len(dataset)
-    if is_cuikmolmaker_available():
-        assert len(data) == len(cuik_molecule_dataset)
+    assert len(data) == len(cuik_molecule_dataset)
 
 
 def test_smis(dataset, cuik_molecule_dataset, smis):
     assert smis == dataset.smiles
-    if is_cuikmolmaker_available():
-        assert smis == cuik_molecule_dataset.smiles
+    assert smis == cuik_molecule_dataset.smiles
 
 
 def test_targets(dataset, cuik_molecule_dataset, targets):
     np.testing.assert_array_equal(dataset.Y, targets)
-    if is_cuikmolmaker_available():
-        np.testing.assert_array_equal(cuik_molecule_dataset.Y, targets)
+    np.testing.assert_array_equal(cuik_molecule_dataset.Y, targets)
 
 
 def test_set_targets_too_short(dataset):
@@ -141,13 +124,11 @@ def test_set_targets_too_short(dataset):
 
 def test_num_tasks(dataset, cuik_molecule_dataset, targets):
     assert dataset.t == targets.shape[1]
-    if is_cuikmolmaker_available():
-        assert cuik_molecule_dataset.t == targets.shape[1]
+    assert cuik_molecule_dataset.t == targets.shape[1]
 
 
 #  __getitem__ is slower than __getitems__ for CuikmolmakerDataset, so we don't use it in our
 # examples, but we still define it for completeness, so test it here.
-@pytest.mark.skipif(not is_cuikmolmaker_available(), reason="cuik_molmaker not installed")
 def test_getitem(cuik_molecule_dataset):
     datum = cuik_molecule_dataset[0]
     assert datum is not None

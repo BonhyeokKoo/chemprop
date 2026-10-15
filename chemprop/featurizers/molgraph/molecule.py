@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Literal
 
+import cuik_molmaker
 import numpy as np
 from rdkit import Chem
 from rdkit.Chem import Mol
@@ -11,10 +11,6 @@ from torch import Tensor
 from chemprop.data.molgraph import MolGraph
 from chemprop.featurizers.base import Featurizer, GraphFeaturizer
 from chemprop.featurizers.molgraph.mixins import _MolGraphFeaturizerMixin
-from chemprop.utils.utils import is_cuikmolmaker_available
-
-if is_cuikmolmaker_available():
-    import cuik_molmaker
 
 
 @dataclass
@@ -116,7 +112,7 @@ class BatchCuikMolGraph:
         self.__size = self.batch[-1].item() + 1
 
     def __len__(self) -> int:
-        """the number of individual :class:`MolGraph`\s in this batch"""
+        r"""the number of individual :class:`MolGraph`\s in this batch"""
         return self.__size
 
     def to(self, device: str | torch.device):
@@ -155,11 +151,6 @@ class CuikmolmakerMolGraphFeaturizer(Featurizer[list[str], BatchCuikMolGraph]):
     bond_fdim: int = field(init=False)
 
     def __post_init__(self):
-        if not is_cuikmolmaker_available():
-            raise ImportError(
-                "CuikmolmakerMolGraphFeaturizer requires cuik-molmaker package to be installed. "
-                f"Please install it using `python {Path(__file__).parents[2] / Path('scripts/check_and_install_cuik_molmaker.py')}`."
-            )
         atom_props_float = ["aromatic", "mass"]
         bond_props = ["is-null", "bond-type-onehot", "conjugated", "in-ring", "stereo"]
         self.bond_fdim = 14
@@ -204,15 +195,15 @@ class CuikmolmakerMolGraphFeaturizer(Featurizer[list[str], BatchCuikMolGraph]):
         else:
             raise ValueError(f"Invalid atom featurizer mode: {self.atom_featurizer_mode}")
 
-        self.atom_property_list_onehot = cuik_molmaker.atom_onehot_feature_names_to_tensor(
+        self.atom_property_list_onehot = cuik_molmaker.atom_onehot_feature_names_to_array(
             atom_props_onehot
         )
 
-        self.atom_property_list_float = cuik_molmaker.atom_float_feature_names_to_tensor(
+        self.atom_property_list_float = cuik_molmaker.atom_float_feature_names_to_array(
             atom_props_float
         )
 
-        self.bond_property_list = cuik_molmaker.bond_feature_names_to_tensor(bond_props)
+        self.bond_property_list = cuik_molmaker.bond_feature_names_to_array(bond_props)
 
         self.atom_fdim += self.extra_atom_fdim
         self.bond_fdim += self.extra_bond_fdim
@@ -241,6 +232,13 @@ class CuikmolmakerMolGraphFeaturizer(Featurizer[list[str], BatchCuikMolGraph]):
             duplicate_edges,
             add_self_loop,
         )
+
+        # Convert to Torch.tensors
+        atom_feats = torch.from_numpy(atom_feats)
+        bond_feats = torch.from_numpy(bond_feats)
+        edge_index = torch.from_numpy(edge_index)
+        rev_edge_index = torch.from_numpy(rev_edge_index)
+        batch = torch.from_numpy(batch)
 
         if atom_features_extra is not None:
             atom_features_extra = torch.tensor(atom_features_extra, dtype=torch.float32)

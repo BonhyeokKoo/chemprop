@@ -24,9 +24,11 @@ Chemprop's usage within Python scripts is also illustrated by the Jupyter notebo
     transfer_learning
     chemeleon_foundation_finetuning
     uncertainty
+    interpreting_with_myerson_values
     interpreting_monte_carlo_tree_search
     shapley_value_with_customized_featurizers
     extra_features_descriptors
+    training_NLogProbEnrichment
     use_featurizer_with_other_libraries
     convert_v1_to_v2
     mol_atom_bond

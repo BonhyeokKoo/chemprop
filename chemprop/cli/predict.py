@@ -1,4 +1,5 @@
 from argparse import ArgumentError, ArgumentParser, Namespace
+import json
 import logging
 from pathlib import Path
 import sys
@@ -10,6 +11,7 @@ import pandas as pd
 import torch
 
 from chemprop import data
+from chemprop.callbacks import CallbackRegistry
 from chemprop.cli.common import (
     add_common_args,
     find_models,
@@ -24,7 +26,13 @@ from chemprop.cli.utils import (
     format_probability_string,
     make_dataset,
 )
+from chemprop.featurizers.atom import MultiHotAtomFeaturizer
+from chemprop.featurizers.molgraph.reaction import (
+    CondensedGraphOfReactionFeaturizer,
+    CuikmolmakerCGRFeaturizer,
+)
 from chemprop.models.utils import load_model, load_output_columns
+from chemprop.nn.message_passing import BondMessagePassing
 from chemprop.nn.metrics import BoundedMixin
 from chemprop.nn.predictors import EvidentialFFN, MulticlassClassificationFFN, MveFFN, QuantileFFN
 from chemprop.uncertainty import (
@@ -85,6 +93,20 @@ def add_predict_args(parser: ArgumentParser) -> ArgumentParser:
         type=Path,
         nargs="+",
         help="Location of checkpoint(s) or model file(s) to use for prediction. It can be a path to either a single pretrained model checkpoint (.ckpt) or single pretrained model file (.pt), a directory that contains these files, or a list of path(s) and directory(s). If a directory, will recursively search and predict on all found (.pt) models.",
+    )
+
+    cb_args = parser.add_argument_group("Callback args")
+    cb_args.add_argument(
+        "--callback",
+        default=None,
+        action=LookupAction(CallbackRegistry),
+        help="The callback to use. Only one callback can be used at a time.",
+    )
+    cb_args.add_argument(
+        "--callback-params",
+        default="{}",
+        type=json.loads,
+        help="JSON string of kwargs for the callback.",
     )
 
     unc_args = parser.add_argument_group("Uncertainty and calibration args")
@@ -199,6 +221,83 @@ def process_predict_args(args: Namespace) -> Namespace:
     return args
 
 
+def check_featurizer_matches_model(data_loader, model):
+    """
+    The default featurizer in v1 has a longer atom feature vector than in v2. We try to detect this
+    common mistake and point users to the fix.
+    Additionally, in v1 there was a mode for reaction-in-solvent data. The order of the message
+    passing blocks was reaction + solvent. In v2 the CLI always does molecule datasets + reaction
+    datasets. We also try to detect this and fix it automatically for the user, as there is no v2
+    flag for this.
+    """
+    if isinstance(data_loader.dataset, data.MulticomponentDataset):
+        datasets = data_loader.dataset.datasets
+        mps = model.message_passing.blocks
+    else:
+        datasets = [data_loader.dataset]
+        mps = [model.message_passing]
+
+    current_feat_output_dims = []
+    v1_default_feat_output_dims = []
+    mp_input_dims = []
+    v1_atom_featurizer = MultiHotAtomFeaturizer.v1()
+    v1_atom_fdims = []
+
+    for dataset, mp in zip(datasets, mps):
+        featurizer = dataset.featurizer
+        atom_fdim = featurizer.atom_fdim
+        bond_fdim = featurizer.bond_fdim
+
+        if isinstance(featurizer, (CondensedGraphOfReactionFeaturizer, CuikmolmakerCGRFeaturizer)):
+            v1_atom_fdim = 2 * len(v1_atom_featurizer) - len(v1_atom_featurizer.atomic_nums) - 1
+        else:
+            v1_atom_fdim = len(v1_atom_featurizer) + featurizer.extra_atom_fdim
+
+        if isinstance(mp, BondMessagePassing):
+            current_feat_output_dims.append(atom_fdim + bond_fdim)
+            v1_default_feat_output_dims.append(v1_atom_fdim + bond_fdim)
+        else:  # AtomMessagePassing
+            current_feat_output_dims.append(atom_fdim)
+            v1_default_feat_output_dims.append(v1_atom_fdim)
+
+        mp_input_dims.append(mp.W_i.in_features)
+        v1_atom_fdims.append(v1_atom_fdim)
+
+    if current_feat_output_dims == mp_input_dims:
+        return data_loader
+
+    if v1_default_feat_output_dims == mp_input_dims or (
+        len(datasets) == 2
+        and v1_default_feat_output_dims[::-1] == mp_input_dims
+        and current_feat_output_dims != v1_default_feat_output_dims
+    ):
+        logger.warning(
+            "The featurizer output dimension(s) did not match the model input dimension(s), but "
+            "the v1 default featurizer output dimensions(s) do match. Using the v1 default "
+            "featurizer! To remove this warning, pass `--multi-hot-atom-featurizer-mode v1`."
+        )
+        for dataset, v1_atom_fdim in zip(datasets, v1_atom_fdims):
+            dataset.featurizer.atom_featurizer = MultiHotAtomFeaturizer.v1()
+            dataset.featurizer.atom_fdim = v1_atom_fdim
+        current_feat_output_dims = v1_default_feat_output_dims
+
+    if len(datasets) == 2 and current_feat_output_dims[::-1] == mp_input_dims:
+        dataset = data.MulticomponentDataset([datasets[1], datasets[0]])
+        return data.build_dataloader(
+            dataset, data_loader.batch_size, data_loader.num_workers, shuffle=False
+        )
+
+    if current_feat_output_dims != mp_input_dims:
+        raise ArgumentError(
+            argument=None,
+            message=f"The featurizer output dimension(s) ({current_feat_output_dims}) and the model input "
+            f"dimension(s) ({mp_input_dims}) are different. Check that you are using the same "
+            "featurization arguments that were used when training the model.",
+        )
+
+    return data_loader
+
+
 def prepare_data_loader(
     args: Namespace,
     multicomponent: bool,
@@ -294,10 +393,12 @@ def make_prediction_for_models(
     )
     format_kwargs["target_cols"] = output_columns if args.evaluation_methods is not None else []
     test_loader = prepare_data_loader(args, multicomponent, mol_atom_bond, False, format_kwargs)
+    test_loader = check_featurizer_matches_model(test_loader, models[0])
     logger.info(f"test size: {len(test_loader.dataset)}")
     if args.cal_path is not None:
         format_kwargs["target_cols"] = output_columns
         cal_loader = prepare_data_loader(args, multicomponent, mol_atom_bond, True, format_kwargs)
+        cal_loader = check_featurizer_matches_model(cal_loader, models[0])
         logger.info(f"calibration size: {len(cal_loader.dataset)}")
 
     uncertainty_estimator = Factory.build(
@@ -306,8 +407,22 @@ def make_prediction_for_models(
         dropout=args.uncertainty_dropout_p,
     )
 
+    callbacks = (
+        [
+            Factory.build(
+                CallbackRegistry[args.callback], model_paths, args.output, **args.callback_params
+            )
+        ]
+        if args.callback
+        else None
+    )
+
     trainer = pl.Trainer(
-        logger=False, enable_progress_bar=True, accelerator=args.accelerator, devices=args.devices
+        logger=False,
+        enable_progress_bar=True,
+        accelerator=args.accelerator,
+        devices=args.devices,
+        callbacks=callbacks,
     )
     test_individual_preds, test_individual_uncs = uncertainty_estimator(
         test_loader, models, trainer
@@ -363,8 +478,8 @@ def make_prediction_for_models(
                 metric_value = evaluator.evaluate(test_uncs, test_targets, test_mask)
             logger.info(f"{evaluator.alias}: {metric_value.tolist()}")
 
-    if args.uncertainty_method == "none" and (
-        isinstance(models[0].predictor, (MveFFN, EvidentialFFN, QuantileFFN))
+    if args.uncertainty_method == "none" and isinstance(
+        models[0].predictor, (MveFFN, EvidentialFFN, QuantileFFN)
     ):
         test_preds = test_preds[..., 0]
         test_individual_preds = test_individual_preds[..., 0]
@@ -502,8 +617,22 @@ def make_MAB_prediction_for_models(
         dropout=args.uncertainty_dropout_p,
     )
 
+    callbacks = (
+        [
+            Factory.build(
+                CallbackRegistry[args.callback], model_paths, args.output, **args.callback_params
+            )
+        ]
+        if args.callback
+        else None
+    )
+
     trainer = pl.Trainer(
-        logger=False, enable_progress_bar=True, accelerator=args.accelerator, devices=args.devices
+        logger=False,
+        enable_progress_bar=True,
+        accelerator=args.accelerator,
+        devices=args.devices,
+        callbacks=callbacks,
     )
     test_individual_predss, test_individual_uncss = uncertainty_estimator(
         test_loader, models, trainer
@@ -591,9 +720,8 @@ def make_MAB_prediction_for_models(
                     metric_value = evaluator.evaluate(test_uncs, test_targets, test_mask)
                 logger.info(f"{evaluator.alias} ({kind}): {metric_value.tolist()}")
 
-    if args.uncertainty_method == "none" and (
-        isinstance(next(p for p in models[0].predictors if p is not None), MveFFN)
-        or isinstance(next(p for p in models[0].predictors if p is not None), EvidentialFFN)
+    if args.uncertainty_method == "none" and isinstance(
+        next(p for p in models[0].predictors if p is not None), (MveFFN, EvidentialFFN, QuantileFFN)
     ):
         test_predss = [
             test_preds[..., 0] if test_preds is not None else None for test_preds in test_predss

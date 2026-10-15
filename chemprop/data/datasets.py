@@ -12,6 +12,7 @@ from torch.utils.data import Dataset
 
 from chemprop.data.datapoints import (
     LazyMoleculeDatapoint,
+    LazyReactionDatapoint,
     MolAtomBondDatapoint,
     MoleculeDatapoint,
     ReactionDatapoint,
@@ -21,6 +22,7 @@ from chemprop.featurizers.base import Featurizer
 from chemprop.featurizers.molgraph import (
     BatchCuikMolGraph,
     CGRFeaturizer,
+    CuikmolmakerCGRFeaturizer,
     CuikmolmakerMolGraphFeaturizer,
     SimpleMoleculeMolGraphFeaturizer,
 )
@@ -159,7 +161,7 @@ class _MolGraphDatasetMixin:
         if key not in VALID_KEYS:
             raise ValueError(f"Invalid feature key! got: {key}. expected one of: {VALID_KEYS}")
 
-        X = self.X_d if self.X_d[0] is not None else None
+        X = self._X_d if self._X_d[0] is not None else None
 
         if X is None:
             return scaler
@@ -187,7 +189,7 @@ class _MolGraphDatasetMixin:
 
 @dataclass
 class MoleculeDataset(_MolGraphDatasetMixin, MolGraphDataset):
-    """A :class:`MoleculeDataset` composed of :class:`MoleculeDatapoint`\s
+    r"""A :class:`MoleculeDataset` composed of :class:`MoleculeDatapoint`\s
 
     A :class:`MoleculeDataset` produces featurized data for input to a
     :class:`MPNN` model. Typically, data featurization is performed on-the-fly
@@ -324,13 +326,13 @@ class MoleculeDataset(_MolGraphDatasetMixin, MolGraphDataset):
 
         match key:
             case "X_d":
-                X = None if self.d_xd == 0 else self.X_d
+                X = None if self.d_xd == 0 else self._X_d
             case "V_f":
-                X = None if self.d_vf == 0 else np.concatenate(self.V_fs, axis=0)
+                X = None if self.d_vf == 0 else np.concatenate(self._V_fs, axis=0)
             case "E_f":
-                X = None if self.d_ef == 0 else np.concatenate(self.E_fs, axis=0)
+                X = None if self.d_ef == 0 else np.concatenate(self._E_fs, axis=0)
             case "V_d":
-                X = None if self.d_vd == 0 else np.concatenate(self.V_ds, axis=0)
+                X = None if self.d_vd == 0 else np.concatenate(self._V_ds, axis=0)
             case _:
                 raise ValueError(f"Invalid feature key! got: {key}. expected one of: {VALID_KEYS}")
 
@@ -344,11 +346,11 @@ class MoleculeDataset(_MolGraphDatasetMixin, MolGraphDataset):
             case "X_d":
                 self.X_d = scaler.transform(X)
             case "V_f":
-                self.V_fs = [scaler.transform(V_f) if V_f.size > 0 else V_f for V_f in self.V_fs]
+                self.V_fs = [scaler.transform(V_f) if V_f.size > 0 else V_f for V_f in self._V_fs]
             case "E_f":
-                self.E_fs = [scaler.transform(E_f) if E_f.size > 0 else E_f for E_f in self.E_fs]
+                self.E_fs = [scaler.transform(E_f) if E_f.size > 0 else E_f for E_f in self._E_fs]
             case "V_d":
-                self.V_ds = [scaler.transform(V_d) if V_d.size > 0 else V_d for V_d in self.V_ds]
+                self.V_ds = [scaler.transform(V_d) if V_d.size > 0 else V_d for V_d in self._V_ds]
             case _:
                 raise RuntimeError("unreachable code reached!")
 
@@ -365,7 +367,7 @@ class MoleculeDataset(_MolGraphDatasetMixin, MolGraphDataset):
 
 @dataclass
 class CuikmolmakerDataset(MoleculeDataset):
-    """A :class:`CuikmolmakerDataset` composed of :class:`LazyMoleculeDatapoint`\s and a
+    r"""A :class:`CuikmolmakerDataset` composed of :class:`LazyMoleculeDatapoint`\s and a
     :class:`CuikmolmakerMolGraphFeaturizer`
 
     A :class:`CuikmolmakerDataset` produces featurized data for a batch of molecules for ingestion
@@ -416,9 +418,17 @@ class CuikmolmakerDataset(MoleculeDataset):
         V_d = np.concat([self.V_ds[idx] for idx in indexes]) if self.V_ds[0] is not None else None
         X_d = self.X_d[indexes] if self.X_d[0] is not None else None
         Y = self.Y[indexes] if self.Y[0] is not None else None
-        weights = self.weights[indexes]
-        lt_mask = self.lt_mask[indexes] if self.lt_mask[0] is not None else None
-        gt_mask = self.gt_mask[indexes] if self.gt_mask[0] is not None else None
+        weights = np.array([self.data[idx].weight for idx in indexes])
+        lt_mask = (
+            np.array([self.data[idx].lt_mask for idx in indexes])
+            if self.data[0].lt_mask is not None
+            else None
+        )
+        gt_mask = (
+            np.array([self.data[idx].gt_mask for idx in indexes])
+            if self.data[0].gt_mask is not None
+            else None
+        )
 
         return CuikBatchedDatum(bmg, V_d, X_d, Y, weights, lt_mask, gt_mask)
 
@@ -594,13 +604,13 @@ class MolAtomBondDataset(MoleculeDataset, MolAtomBondGraphDataset):
             case "X_d":
                 X = None if self.d_xd == 0 else self.X_d
             case "V_f":
-                X = None if self.d_vf == 0 else np.concatenate(self.V_fs, axis=0)
+                X = None if self.d_vf == 0 else np.concatenate(self._V_fs, axis=0)
             case "E_f":
-                X = None if self.d_ef == 0 else np.concatenate(self.E_fs, axis=0)
+                X = None if self.d_ef == 0 else np.concatenate(self._E_fs, axis=0)
             case "V_d":
-                X = None if self.d_vd == 0 else np.concatenate(self.V_ds, axis=0)
+                X = None if self.d_vd == 0 else np.concatenate(self._V_ds, axis=0)
             case "E_d":
-                X = None if self.d_ed == 0 else np.concatenate(self.E_ds, axis=0)
+                X = None if self.d_ed == 0 else np.concatenate(self._E_ds, axis=0)
             case _:
                 raise ValueError(f"Invalid feature key! got: {key}. expected one of: {VALID_KEYS}")
 
@@ -614,13 +624,13 @@ class MolAtomBondDataset(MoleculeDataset, MolAtomBondGraphDataset):
             case "X_d":
                 self.X_d = scaler.transform(X)
             case "V_f":
-                self.V_fs = [scaler.transform(V_f) if V_f.size > 0 else V_f for V_f in self.V_fs]
+                self.V_fs = [scaler.transform(V_f) if V_f.size > 0 else V_f for V_f in self._V_fs]
             case "E_f":
-                self.E_fs = [scaler.transform(E_f) if E_f.size > 0 else E_f for E_f in self.E_fs]
+                self.E_fs = [scaler.transform(E_f) if E_f.size > 0 else E_f for E_f in self._E_fs]
             case "V_d":
-                self.V_ds = [scaler.transform(V_d) if V_d.size > 0 else V_d for V_d in self.V_ds]
+                self.V_ds = [scaler.transform(V_d) if V_d.size > 0 else V_d for V_d in self._V_ds]
             case "E_d":
-                self.E_ds = [scaler.transform(E_d) if E_d.size > 0 else E_d for E_d in self.E_ds]
+                self.E_ds = [scaler.transform(E_d) if E_d.size > 0 else E_d for E_d in self._E_ds]
             case _:
                 raise RuntimeError("unreachable code reached!")
 
@@ -639,7 +649,7 @@ class MolAtomBondDataset(MoleculeDataset, MolAtomBondGraphDataset):
 
 @dataclass
 class ReactionDataset(_MolGraphDatasetMixin, MolGraphDataset):
-    """A :class:`ReactionDataset` composed of :class:`ReactionDatapoint`\s
+    r"""A :class:`ReactionDataset` composed of :class:`ReactionDatapoint`\s
 
     .. note::
         The featurized data provided by this class may be cached, simlar to a
@@ -708,9 +718,69 @@ class ReactionDataset(_MolGraphDatasetMixin, MolGraphDataset):
         return 0
 
 
+@dataclass
+class CuikmolmakerReactionDataset(ReactionDataset):
+    r"""A :class:`CuikmolmakerReactionDataset` composed of :class:`LazyReactionDatapoint`\s and a
+    :class:`CuikmolmakerCGRFeaturizer`
+
+    Featurizes reactions as Condensed Graphs of Reaction (CGR) using the cuik-molmaker C++ library.
+    Featurization is always on-the-fly and processed in batches for efficiency.
+
+    Parameters
+    ----------
+    data : list[LazyReactionDatapoint]
+        the reaction datapoints
+    featurizer : CuikmolmakerCGRFeaturizer
+        the CGR featurizer
+    """
+
+    data: list[LazyReactionDatapoint]
+    featurizer: CuikmolmakerCGRFeaturizer = field(default_factory=CuikmolmakerCGRFeaturizer)
+
+    @ReactionDataset.cache.setter
+    def cache(self, cache: bool = False):
+        if cache:
+            raise NotImplementedError(
+                "CuikmolmakerReactionDataset is meant to be used without caching!"
+            )
+
+    @property
+    def smiles(self) -> list[tuple]:
+        return [(d.rct_smiles, d.pdt_smiles) for d in self.data]
+
+    def __getitem__(self, idx: int) -> Datum:
+        d = self.data[idx]
+        bmg = self.featurizer([d.rct_smiles], [d.pdt_smiles])
+        mg = MolGraph(
+            bmg.V.numpy(), bmg.E.numpy(), bmg.edge_index.numpy(), bmg.rev_edge_index.numpy()
+        )
+        return Datum(mg, None, self.X_d[idx], self.Y[idx], d.weight, d.lt_mask, d.gt_mask)
+
+    def __getitems__(self, indexes: list[int]) -> CuikBatchedDatum:
+        rct_smiles_list = [self.data[idx].rct_smiles for idx in indexes]
+        pdt_smiles_list = [self.data[idx].pdt_smiles for idx in indexes]
+        bmg = self.featurizer(rct_smiles_list, pdt_smiles_list)
+
+        X_d = self.X_d[indexes] if self.X_d[0] is not None else None
+        Y = self.Y[indexes] if self.Y[0] is not None else None
+        weights = np.array([self.data[idx].weight for idx in indexes])
+        lt_mask = (
+            np.array([self.data[idx].lt_mask for idx in indexes])
+            if self.data[0].lt_mask is not None
+            else None
+        )
+        gt_mask = (
+            np.array([self.data[idx].gt_mask for idx in indexes])
+            if self.data[0].gt_mask is not None
+            else None
+        )
+
+        return CuikBatchedDatum(bmg, None, X_d, Y, weights, lt_mask, gt_mask)
+
+
 @dataclass(repr=False, eq=False)
 class MulticomponentDataset(_MolGraphDatasetMixin, Dataset):
-    """A :class:`MulticomponentDataset` is a :class:`Dataset` composed of parallel
+    r"""A :class:`MulticomponentDataset` is a :class:`Dataset` composed of parallel
     :class:`MoleculeDatasets` and :class:`ReactionDataset`\s"""
 
     datasets: list[MoleculeDataset | ReactionDataset]

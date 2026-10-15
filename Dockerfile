@@ -17,17 +17,17 @@
 # Parent Image
 FROM condaforge/miniforge3:latest
 
-# Install libxrender1 (required by RDKit) and binutils (to get strings, for cuik-molmaker install) and then clean up
+# Install libxrender1 (required by RDKit) and then clean up
 RUN apt-get update && \
     apt-get install -y \
-    libxrender1 binutils && \
+    libxrender1 && \
     apt-get autoremove -y && \
     apt-get clean -y
 
 WORKDIR /opt/chemprop
 
 # build an empty conda environment with appropriate Python version
-RUN conda create --name chemprop_env python=3.11* rdkit=2025.3.2 pytorch=2.6.0 -c pytorch
+RUN conda create --name chemprop_env python=3.12*
 
 # This runs all subsequent commands inside the chemprop_env conda environment
 #
@@ -43,9 +43,6 @@ ADD LICENSE.txt pyproject.toml README.md environment.yml ./
 RUN conda env update --file environment.yml --name chemprop_env && \
     conda clean --all --yes && \
     python -m pip install --no-deps .
-
-# Install cuik-molmaker using script
-RUN python /opt/chemprop/chemprop/scripts/check_and_install_cuik_molmaker.py
 
 # when running this image, open an interactive bash terminal inside the conda environment
 RUN conda init

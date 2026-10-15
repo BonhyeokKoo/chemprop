@@ -23,8 +23,8 @@ Chemprop can either be installed from PyPI via pip_ or using a provided ``x.y.x_
 
 .. _install-from-pypi:
 
-Option 1: Installing from PyPI
-------------------------------
+Option 1: Installing from PyPI or Conda
+---------------------------------------
 
 To install the latest version of Chemprop and all of its dependencies, execute the following commands:
 
@@ -33,6 +33,13 @@ To install the latest version of Chemprop and all of its dependencies, execute t
     conda create -n chemprop python=3.11
     conda activate chemprop
     pip install chemprop
+    # or 
+    # conda install chemprop
+
+.. note::
+    `cuik-molmaker`_ is a package that accelerates featurization of molecules using RDKit. It is installed by default with all installation options and can be used to accelerate training and inference. 
+
+.. _`cuik-molmaker`: https://github.com/NVIDIA-Digital-Bio/cuik-molmaker
 
 The above approach is recommended as it will install the most updated versions of all external dependencies and will be more compatible with other dependencies you may wish to add. However, it is possible that external dependencies to Chemprop may introduce backwards incompatible changes to their codebase. For this reason, we also provide known working sets of dependencies for each Chemprop version. To install a specific version of Chemprop (i.e. 2.1.0), download the corresponding ``x.y.z_requirements.txt`` file from the `Chemprop GitHub repository <https://github.com/chemprop/chemprop/tree/main/requirements>`_ and run the following commands:
 
@@ -69,12 +76,9 @@ Option 3: Installing from source using environment.yml
     cd chemprop
     conda env create -f environment.yml
     conda activate chemprop
-    pip install -e .
-
+    pip install --no-deps -e .
 .. note::
-    `cuik-molmaker`_ is a package that accelerates featurization of molecules using RDKit, and thereby accelerates training and inference. It can be installed using the python script ``check_and_install_cuik_molmaker.py``. This script finds a compatible version of ``cuik-molmaker`` depending on the version of ``RDKit`` and ``PyTorch`` and installs it. Currently, ``cuik-molmaker`` is compatible with installation :ref:`install-from-source-using-environment-yml` and :ref:`install-via-docker`.
-
-.. _`cuik-molmaker`: https://github.com/NVIDIA-Digital-Bio/cuik-molmaker
+    The ``--no-deps`` argument is needed to prevent pip from installing dependencies that are already provided by the ``environment.yml`` file. This avoids conflicts and ensures that key packages such as ``rdkit`` and ``cuik_molmaker`` are installed from conda rather than overwritten by pip, which could otherwise lead to incompatibilities or runtime errors.
 
 .. _install-via-docker:
 
