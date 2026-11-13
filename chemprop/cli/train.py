@@ -318,8 +318,8 @@ def add_train_args(parser: ArgumentParser) -> ArgumentParser:
     extra_mpnn_args.add_argument(
         "--spectral-activation",
         default="exp",
-        choices=["softplus", "exp"],
-        help="Indicates which function to use in task_type spectra training to constrain outputs to be positive.",
+        choices=["softplus", "exp", "softmax"],
+        help="Spectral output activation: exp or softplus (normalized), or softmax (numerically stable).",
     )
 
     atom_ffn_args = parser.add_argument_group("Atom FFN args")

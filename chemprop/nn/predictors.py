@@ -380,16 +380,20 @@ class SpectralFFN(_FFNPredictorBase):
                 spectral_activation = _Exp()
             case "softplus" | None:
                 spectral_activation = nn.Softplus()
+            case "softmax":
+                spectral_activation = nn.Softmax(dim=1)
             case _:
                 raise ValueError(
                     f"Unknown spectral activation: {spectral_activation}. "
-                    "Expected one of 'exp', 'softplus' or None."
+                    "Expected one of 'exp', 'softplus', 'softmax' or None."
                 )
         self.spectral_activation = spectral_activation
 
     def forward(self, Z: Tensor) -> Tensor:
         Y = super().forward(Z)
         Y = self.spectral_activation(Y)
+        if isinstance(self.spectral_activation, nn.Softmax):
+            return Y  # softmax already normalizes
         return Y / Y.sum(1, keepdim=True)
 
     train_step = forward
